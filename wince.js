@@ -142,6 +142,18 @@ function newSessionLi(session) {
         tabsUl.appendChild(newTabLi(tab));
     });
 
+    var openA = document.createElement('a');
+    openA.appendChild(document.createTextNode('open'));
+    openA.title = 'open';
+    openA.href = '#';
+    openA.onclick = function() {
+        var urls = [];
+        session.tabs.forEach(function(tab) {
+            urls.push(tab.url);
+        });
+        chrome.windows.create({url: urls});
+    }
+
     var removeA = document.createElement('a');
     removeA.appendChild(document.createTextNode('delete'));
     removeA.title = 'delete';
@@ -154,6 +166,8 @@ function newSessionLi(session) {
     }
 
     var li = document.createElement('li');
+    li.appendChild(openA);
+    li.appendChild(document.createTextNode(' '));
     li.appendChild(removeA);
     li.appendChild(document.createTextNode(' '));
     li.appendChild(document.createTextNode(session.name));
