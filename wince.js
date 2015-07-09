@@ -1,99 +1,89 @@
-function insert(x, xs, keyF) {
-    var i = 0;
-    while (i < xs.length && keyF(x) > keyF(xs[i])) {
-        i++;
-    }
+// Copyright (c) 2015 Sean Kelleher. All rights reserved.
+// Use of this source code is governed by a GPL
+// license that can be found in the LICENSE file.
+//
+// There are three session types, "unsaved", "active" and "saved". "Session" in
+// the context of Wince simply refers to a window. All windows start off as
+// "unsaved". A window that is saved becomes "active" in the local browser
+// instance and becomes "saved" in all other instances. A "saved" window that is
+// opened also becomes "active", and an "active" window that is closed becomes
+// "saved" locally. All "active" windows are closed (and become "saved") at the
+// end of a browser session.
 
-    if (i < xs.length && keyF(x) == keyF(xs[i])) {
-        return false;
-    }
+function newSessionUl(session) {
+    var tabsUl = document.createElement('ul');
 
-    xs.splice(i, 0, x);
+    session.tabs.forEach(function(tab) {
+        var favIcon = document.createElement('img');
+        favIcon.src = tab.favIconUrl;
+        favIcon.class = 'favicon';
+        favIcon.width = '16';
+        favIcon.height = '16';
 
-    return true;
-}
+        // TODO Take state parameter, add "remove" button if unsaved.
 
-function sessionName(session) {
-    return session.name;
-}
+        var a = document.createElement('a');
+        a.appendChild(document.createTextNode(tab.title));
+        a.title = tab.url;
+        a.href = tab.url;
 
-function saveSession(tabs) {
-    var session = {tabs: tabs};
-    session.name = prompt("Please enter session name:", "");
+        var tabLi = document.createElement('li');
+        tabLi.appendChild(favIcon);
+        tabLi.appendChild(a);
 
-    if (!session.name) {
-        return;
-    }
-
-    getSessions(function(sessions) {
-        if (!insert(session, sessions, sessionName)) {
-            alert("'" + session.name + "' already exists");
-            return;
-        }
-
-        setSessions(sessions);
+        tabsUl.appendChild(tabLi);
     });
+
+    return tabsUl;
 }
 
-function newTabLi(tab) {
-    var favIcon = document.createElement('img');
-    favIcon.src = tab.favIconUrl;
-    favIcon.class = 'favicon';
-    favIcon.width = '16';
-    favIcon.height = '16';
+function initSaved(ul, session) {
+    var li = document.createElement('li');
 
-    var a = document.createElement('a');
-    a.appendChild(document.createTextNode(tab.title));
-    a.title = tab.url;
-    a.href = tab.url;
+    // TODO Add "open" button. On open, move the tab to "active" `ul` and remove
+    // open/delete buttons.
 
-    var tabLi = document.createElement('li');
-    tabLi.appendChild(favIcon);
-    tabLi.appendChild(a);
+    var remove = document.createElement('a');
+    remove.appendChild(document.createTextNode('delete'));
+    remove.href = '#';
+    remove.onclick = function() {
+        ul.removeChild(li);
 
-    return tabLi;
-}
+        getSessions(function (sessions) {
+            chrome.storage.sync.remove(
+                session.name,
+                function() {
+                    if (chrome.runtime.lastError) {
+                        alert(chrome.runtime.lastError.message);
+                    }
+                }
+            );
+        });
+    };
+    li.appendChild(remove);
 
-function currentTabs() {
-    chrome.windows.getAll(
-        {'populate': true},
-        function(wins) {
-            var winsUl = document.getElementById('windows');
+    li.appendChild(document.createTextNode(' '));
 
-            wins.forEach(function(win) {
-                var tabsUl = document.createElement('ul');
+    li.appendChild(document.createTextNode(session.name));
 
-                var tabs = [];
+    var sessionUl = newSessionUl(session);
+    li.appendChild(sessionUl);
 
-                win.tabs.forEach(function(tab) {
-                    var tab = {
-                        favIconUrl: tab.favIconUrl,
-                        title: tab.title,
-                        url: tab.url
-                    };
+    ul.appendChild(li);
 
-                    tabsUl.appendChild(newTabLi(tab));
-                    tabs.push(tab);
-                });
-
-                var save = document.createElement('a');
-                save.appendChild(document.createTextNode('Save Session'));
-                save.href = '#';
-                save.onclick = saveSession.bind(this, tabs);
-
-                var winLi = document.createElement('li');
-                winLi.appendChild(save);
-                winLi.appendChild(tabsUl);
-
-                winsUl.appendChild(winLi);
-            });
+    chrome.storage.onChanged.addListener(function (changes, areaName) {
+        var newSession = changes[session.name];
+        if (areaName == 'sync' && newSession && newSession.newValue) {
+            var sessionUl_ = newSessionUl(newSession.newValue);
+            li.replaceChild(sessionUl_, sessionUl);
+            sessionUl = sessionUl_;
         }
-    );
+    });
 }
 
 function setSessions(sessions) {
     chrome.storage.sync.set(
-        {sessions: sessions},
+        sessions,
         function() {
             if (chrome.runtime.lastError) {
                 alert(chrome.runtime.lastError.message);
@@ -103,131 +93,89 @@ function setSessions(sessions) {
 }
 
 function getSessions(callback) {
-    chrome.storage.sync.get({sessions: []}, function(result) {
+    chrome.storage.sync.get(null, function(result) {
         if (chrome.runtime.lastError) {
             alert(chrome.runtime.lastError.message);
             return;
         }
 
-        callback(result.sessions);
+        callback(result);
     });
 }
 
-function indexOf(x, xs, keyF) {
-        var i = 0;
-        while (i < xs.length && keyF(x) > keyF(xs[i])) {
-            i++;
-        }
-
-        if (i < xs.length && keyF(x) == keyF(xs[i])) {
-            return i;
-        }
-        return -1;
-}
-
-function remove(x, xs, keyF) {
-    var i = indexOf(x, xs, keyF);
-
-    if (i == -1) {
-        return;
-    }
-
-    xs.splice(i, 1);
-}
-
-function newSessionLi(session) {
-    var tabsUl = document.createElement('ul');
-
-    session.tabs.forEach(function(tab) {
-        tabsUl.appendChild(newTabLi(tab));
-    });
-
-    var openA = document.createElement('a');
-    openA.appendChild(document.createTextNode('open'));
-    openA.title = 'open';
-    openA.href = '#';
-    openA.onclick = function() {
-        var urls = [];
-        session.tabs.forEach(function(tab) {
-            urls.push(tab.url);
-        });
-        chrome.windows.create({url: urls});
-    }
-
-    var removeA = document.createElement('a');
-    removeA.appendChild(document.createTextNode('delete'));
-    removeA.title = 'delete';
-    removeA.href = '#';
-    removeA.onclick = function() {
-        getSessions(function(sessions) {
-            remove(session, sessions, sessionName);
-            setSessions(sessions);
-        });
-    }
-
+function initUnsaved(ul, activeUl, session, winId) {
     var li = document.createElement('li');
-    li.appendChild(openA);
-    li.appendChild(document.createTextNode(' '));
-    li.appendChild(removeA);
-    li.appendChild(document.createTextNode(' '));
-    li.appendChild(document.createTextNode(session.name));
-    li.appendChild(tabsUl);
 
-    return li;
-}
+    var a = document.createElement('a');
+    a.appendChild(document.createTextNode('save'));
+    a.href = '#';
+    a.onclick = function() {
+        var name = prompt("Please enter session name:", "");
 
-function loadSessions(sessions) {
-    var sessionsUl = document.getElementById('sessions');
-    var nodes = sessionsUl.childNodes;
+        if (!name) {
+            return;
+        }
 
-    var i, j;
-    i = j = 0;
-
-    while (i < sessions.length) {
-        var session = sessions[i];
-        var node = nodes[j];
-        if (j >= nodes.length || session.name < node.lastChild.data) {
-            var li = newSessionLi(session);
-
-            if (j >= nodes.length) {
-                sessionsUl.appendChild(li);
-            } else {
-                sessionsUl.insertBefore(li, node);
+        getSessions(function(sessions) {
+            if (sessions[name]) {
+                alert("'" + name + "' already exists");
+                return;
             }
 
-            i++;
-            j++;
-        } else if (session.name > node.lastChild.data) {
-            sessionsUl.removeChild(node);
-        } else {
-            i++;
-            j++;
-        }
-    }
+            session.name = name;
+            sessions[name] = session;
 
-    while (j < nodes.length) {
-        sessionsUl.removeChild(nodes[j]);
-    }
+            setSessions(sessions);
+
+            // TODO Change state to "active".
+            // TODO Remove from `ul`.
+            initSaved(activeUl, session);
+        });
+    };
+    li.appendChild(a);
+
+    var sessionUl = newSessionUl(session);
+    li.appendChild(sessionUl);
+
+    ul.appendChild(li);
+
+    // TODO Update `li` on window change.
+}
+
+// TODO close all active windows at end of browser session
+
+function init() {
+    getSessions(function (sessions) {
+        for (var name in sessions) {
+            initSaved(document.getElementById('saved'), sessions[name]);
+        }
+    });
+
+    chrome.windows.getAll(
+        {'populate': true},
+        function(wins) {
+            wins.forEach(function (win) {
+                var session = {tabs: []};
+
+                win.tabs.forEach(function (tab) {
+                    session.tabs.push({
+                        favIconUrl: tab.favIconUrl,
+                        title: tab.title,
+                        url: tab.url
+                    });
+                });
+
+                initUnsaved(
+                    document.getElementById('unsaved'),
+                    document.getElementById('active'),
+                    session,
+                    win.id
+                );
+            });
+        }
+    );
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    currentTabs();
-
-    chrome.storage.sync.get({sessions: []}, function(result) {
-        if (chrome.runtime.lastError) {
-            alert(chrome.runtime.lastError.message);
-            return;
-        }
-
-        loadSessions(result.sessions);
-    });
-
-    chrome.storage.onChanged.addListener(function(changes, areaName) {
-        if (chrome.runtime.lastError) {
-            alert(chrome.runtime.lastError.message);
-            return;
-        }
-
-        loadSessions(changes.sessions.newValue);
-    });
+    init();
 });
