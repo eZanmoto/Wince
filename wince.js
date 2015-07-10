@@ -32,6 +32,8 @@ function renderTabs(tabs, winId) {
 }
 
 function initSession(ulId, winId, render, close) {
+    var closed = false;
+
     var ul = document.getElementById(ulId);
 
     var li = document.createElement('li');
@@ -40,6 +42,10 @@ function initSession(ulId, winId, render, close) {
     me = {};
 
     me.render = function(tabs) {
+        if (closed) {
+            return;
+        }
+
         var newLi = document.createElement('li');
 
         var hide = document.createElement('a');
@@ -76,6 +82,7 @@ function initSession(ulId, winId, render, close) {
     };
 
     me.close = function() {
+        closed = true;
         ul.removeChild(li);
         close();
     }
@@ -129,7 +136,6 @@ function initSavedSession(name) {
             li.appendChild(document.createTextNode(name));
         },
         function () {
-            delete renderers.sync[name];
         }
     );
 }
@@ -202,7 +208,6 @@ function initUnsavedSession(winId) {
             li.appendChild(save);
         },
         function () {
-            delete renderers.local[winId];
         }
     );
 }
