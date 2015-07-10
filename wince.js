@@ -41,8 +41,36 @@ function initSession(ulId, winId, render, close) {
 
     me.render = function(tabs) {
         var newLi = document.createElement('li');
+
+        var hide = document.createElement('a');
+        hide.appendChild(document.createTextNode('hide'));
+        hide.href = '#';
+        newLi.appendChild(hide);
+        newLi.appendChild(document.createTextNode(' '));
+
+        var show = document.createElement('a');
+        show.appendChild(document.createTextNode('show'));
+        show.href = '#';
+
         render(me, newLi, tabs);
-        newLi.appendChild(renderTabs(tabs, winId));
+
+        var tabs = renderTabs(tabs, winId);
+
+        hide.onclick = function () {
+            newLi.replaceChild(show, hide);
+            tabs.style.display = 'none';
+        };
+
+        show.onclick = function () {
+            newLi.replaceChild(hide, show);
+            tabs.style.display = '';
+        };
+
+        if (!winId) {
+            hide.onclick();
+        }
+
+        newLi.appendChild(tabs);
         ul.replaceChild(newLi, li);
         li = newLi;
     };
