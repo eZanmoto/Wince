@@ -48,15 +48,13 @@ function initSession(ulId, winId, render, close) {
 
         var newLi = document.createElement('li');
 
-        var hide = document.createElement('a');
+        var hide = document.createElement('button');
         hide.appendChild(document.createTextNode('hide'));
-        hide.href = '#';
         newLi.appendChild(hide);
         newLi.appendChild(document.createTextNode(' '));
 
-        var show = document.createElement('a');
+        var show = document.createElement('button');
         show.appendChild(document.createTextNode('show'));
-        show.href = '#';
 
         render(me, newLi, tabs);
 
@@ -101,9 +99,8 @@ function initSavedSession(name) {
         null,
         function (me, li, tabs) {
 
-            var open = document.createElement('a');
+            var open = document.createElement('button');
             open.appendChild(document.createTextNode('open'));
-            open.href = '#';
             open.onclick = function() {
                 var urls = [];
                 for (var i in tabs) {
@@ -121,19 +118,19 @@ function initSavedSession(name) {
                 );
             };
 
-            var remove = document.createElement('a');
+            var remove = document.createElement('button');
             remove.appendChild(document.createTextNode('delete'));
-            remove.href = '#';
             remove.onclick = function() {
                 me.close();
                 chrome.storage.sync.remove(name);
             };
 
+            li.appendChild(document.createTextNode(name));
+            li.appendChild(document.createTextNode(' '));
             li.appendChild(open);
             li.appendChild(document.createTextNode(' '));
             li.appendChild(remove);
             li.appendChild(document.createTextNode(' '));
-            li.appendChild(document.createTextNode(name));
         },
         function () {
         }
@@ -152,9 +149,8 @@ function initActiveSession(name, winId) {
             // FIXME This is a debugging tool to work around the fact that
             // closed windows aren't always handled properly and should be
             // removed as soon as feasible.
-            var close = document.createElement('a');
+            var close = document.createElement('button');
             close.appendChild(document.createTextNode('close'));
-            close.href = '#';
             close.onclick = me.close;
             li.appendChild(close);
 
@@ -179,9 +175,8 @@ function initUnsavedSession(winId) {
         'unsaved',
         winId,
         function (me, li, tabs) {
-            var save = document.createElement('a');
+            var save = document.createElement('button');
             save.appendChild(document.createTextNode('save'));
-            save.href = '#';
             save.onclick = function () {
                 var name = prompt("Please enter session name:", "");
 
