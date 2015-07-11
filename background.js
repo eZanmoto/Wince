@@ -33,10 +33,21 @@ chrome.browserAction.onClicked.addListener(function(tab) {
     focusOrCreateTab(chrome.extension.getURL('wince.html'))
 });
 
+var renderers = {};
+
+function addRenderer(winId, renderer) {
+    renderers[winId] = renderer;
+}
+
 var sessionWins = {};
 
 function activateSession(name, winId) {
     sessionWins[name] = winId;
+
+    var renderer = renderers[winId];
+    if (renderer) {
+        renderer.close();
+    }
 }
 
 function winIdForSession(name) {

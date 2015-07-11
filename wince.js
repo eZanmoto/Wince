@@ -145,7 +145,14 @@ function initSavedSession(name) {
                         urls.push(tabs[i].url);
                 }
                 me.close();
-                chrome.windows.create({url: urls});
+                chrome.windows.create(
+                    {url: urls},
+                    function (win) {
+                        chrome.runtime.getBackgroundPage(function (bgPage) {
+                            initActiveSession(bgPage, name, '' + win.id);
+                        });
+                    }
+                );
             };
 
             var remove = document.createElement('button');
@@ -167,35 +174,32 @@ function initSavedSession(name) {
     );
 }
 
-function initActiveSession(name, winId) {
-    chrome.runtime.getBackgroundPage(function (bgPage) {
-        bgPage.activateSession(name, winId);
+function initActiveSession(bgPage, name, winId) {
+    bgPage.activateSession(name, winId);
 
-        renderers.sync[name] = initSession(
-            'active',
-            winId,
-            function (me, li, tabs) {
-                if (tabs.length == 0) {
-                    me.close();
-                    return;
-                }
-
-                li.appendChild(document.createTextNode(' '));
-                li.appendChild(document.createTextNode(name));
-            },
-            function () {
-                chrome.storage.sync.get(null, function (result) {
-                    initSavedSession(name);
-                    renderers.sync[name].render(result[name]);
-                });
+    renderers.sync[name] = initSession(
+        'active',
+        winId,
+        function (me, li, tabs) {
+            if (tabs.length == 0) {
+                me.close();
+                return;
             }
-        );
-    });
 
+            li.appendChild(document.createTextNode(' '));
+            li.appendChild(document.createTextNode(name));
+        },
+        function () {
+            chrome.storage.sync.get(null, function (result) {
+                initSavedSession(name);
+                renderers.sync[name].render(result[name]);
+            });
+        }
+    );
 }
 
-function initUnsavedSession(winId) {
-    renderers.local[winId] = initSession(
+function initUnsavedSession(bgPage, winId) {
+    var renderer = initSession(
         'unsaved',
         winId,
         function (me, li, tabs) {
@@ -217,7 +221,7 @@ function initUnsavedSession(winId) {
                     me.close();
                     chrome.storage.local.remove(winId);
 
-                    initActiveSession(name, winId);
+                    initActiveSession(bgPage, name, winId);
                     var toSet = {};
                     toSet[name] = tabs;
                     chrome.storage.sync.set(toSet);
@@ -229,12 +233,14 @@ function initUnsavedSession(winId) {
         function () {
         }
     );
+    renderers.local[winId] = renderer;
+    bgPage.addRenderer(winId, renderer);
 }
 
-function initAndRenderUnsavedSession(winId) {
+function initAndRenderUnsavedSession(bgPage, winId) {
     // We convert the `winId` to a string so it can be used as a key for Chrome
     // storage.
-    initUnsavedSession('' + winId);
+    initUnsavedSession(bgPage, '' + winId);
 
     chrome.windows.get(
         winId,
@@ -263,7 +269,7 @@ document.addEventListener('DOMContentLoaded', function() {
             for (var name in sessionTabs) {
                 var winId = bgPage.winIdForSession(name);
                 winId
-                    ? initActiveSession(name, winId)
+                    ? initActiveSession(bgPage, name, winId)
                     : initSavedSession(name);
                 renderers.sync[name].render(sessionTabs[name]);
             }
@@ -276,7 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (bgPage.sessionNameWithWinId('' + win.id)) {
                         return;
                     }
-                    initAndRenderUnsavedSession(win.id);
+                    initAndRenderUnsavedSession(bgPage, win.id);
                 });
             }
         );
@@ -292,6 +298,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderers.local['' + winId].close();
             }
         };
+
+        chrome.windows.onCreated.addListener(function (win) {
+            if (bgPage.sessionNameWithWinId('' + win.id)) {
+                return;
+            }
+            initAndRenderUnsavedSession(bgPage, win.id);
+        });
     });
 
     chrome.storage.onChanged.addListener(function (changes, areaName) {
@@ -312,9 +325,5 @@ document.addEventListener('DOMContentLoaded', function() {
                 rs[name].close();
             }
         }
-    });
-
-    chrome.windows.onCreated.addListener(function (win) {
-        initAndRenderUnsavedSession(win.id);
     });
 });
