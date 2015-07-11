@@ -39,12 +39,6 @@ function activateSession(name, winId) {
     sessionWins[name] = winId;
 }
 
-function deactivateSession(name, winId) {
-    if (sessionWins[name] == winId) {
-        delete sessionWins[name];
-    }
-}
-
 function winIdForSession(name) {
     return sessionWins[name];
 }
@@ -109,14 +103,19 @@ chrome.tabs.onAttached.addListener(tabUpdated);
 chrome.tabs.onReplaced.addListener(tabUpdated);
 
 chrome.tabs.onRemoved.addListener(function (tabId, removeInfo) {
+    if (removeInfo.isWindowClosing) {
+        return;
+    }
+
     winUpdated(removeInfo.windowId);
 });
 
+var onWinClose;
+
 chrome.windows.onRemoved.addListener(function (winId) {
-    for (var name in sessionWins) {
-        if (sessionWins[name] == winId) {
-            delete sessionWins[name];
-        }
-        break;
+    var sessionName = sessionNameWithWinId('' + winId);
+    if (onWinClose) {
+        onWinClose('' + winId, sessionName);
     }
+    delete sessionWins[sessionName];
 });

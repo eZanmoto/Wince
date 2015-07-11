@@ -8,6 +8,7 @@
 function renderTabs(tabs, winId) {
     var ul = document.createElement('ul');
 
+    var i = 0;
     tabs.forEach(function(tab) {
         var favIcon = document.createElement('img');
         favIcon.src = tab.favIconUrl;
@@ -15,17 +16,45 @@ function renderTabs(tabs, winId) {
         favIcon.width = '16';
         favIcon.height = '16';
 
-        // TODO Link to tabId if present.
         var link = document.createElement('a');
         link.appendChild(document.createTextNode(tab.title));
         link.title = tab.url;
-        link.href = tab.url;
+        if (winId) {
+            link.onclick = function () {
+                chrome.windows.update(parseInt(winId), {focused: true});
+
+                chrome.windows.get(
+                    parseInt(winId),
+                    {populate: true},
+                    function (win) {
+                        for (; i < win.tabs.length; i++) {
+                            if (win.tabs[i].url == tab.url) {
+                                chrome.tabs.update(win.tabs[i].id, {active: true});
+                                return;
+                            }
+                        }
+                        i--;
+                        for (; i > 0; i--) {
+                            if (win.tabs[i].url == tab.url) {
+                                chrome.tabs.update(win.tabs[i].id, {active: true});
+                                return;
+                            }
+                        }
+                    }
+                );
+            };
+            link.href = '#';
+        } else {
+            link.href = tab.url;
+        }
 
         var li = document.createElement('li');
         li.appendChild(favIcon);
         li.appendChild(link);
 
         ul.appendChild(li);
+
+        i++;
     });
 
     return ul;
@@ -58,6 +87,11 @@ function initSession(ulId, winId, render, close) {
 
         render(me, newLi, tabs);
 
+        // Can become closed in `render`.
+        if (closed) {
+            return;
+        }
+
         var tabs = renderTabs(tabs, winId);
 
         hide.onclick = function () {
@@ -80,6 +114,10 @@ function initSession(ulId, winId, render, close) {
     };
 
     me.close = function() {
+        if (closed) {
+            return;
+        }
+
         closed = true;
         ul.removeChild(li);
         close();
@@ -104,18 +142,10 @@ function initSavedSession(name) {
             open.onclick = function() {
                 var urls = [];
                 for (var i in tabs) {
-                    urls.push(tabs[i].url);
+                        urls.push(tabs[i].url);
                 }
-                chrome.windows.create(
-                    {url: urls},
-                    function (win) {
-                        // Must call `close` before `initActiveSession` because
-                        // otherwise it will remove the renderer.
-                        me.close();
-
-                        initActiveSession(name, '' + win.id);
-                    }
-                );
+                me.close();
+                chrome.windows.create({url: urls});
             };
 
             var remove = document.createElement('button');
@@ -140,34 +170,28 @@ function initSavedSession(name) {
 function initActiveSession(name, winId) {
     chrome.runtime.getBackgroundPage(function (bgPage) {
         bgPage.activateSession(name, winId);
+
+        renderers.sync[name] = initSession(
+            'active',
+            winId,
+            function (me, li, tabs) {
+                if (tabs.length == 0) {
+                    me.close();
+                    return;
+                }
+
+                li.appendChild(document.createTextNode(' '));
+                li.appendChild(document.createTextNode(name));
+            },
+            function () {
+                chrome.storage.sync.get(null, function (result) {
+                    initSavedSession(name);
+                    renderers.sync[name].render(result[name]);
+                });
+            }
+        );
     });
 
-    renderers.sync[name] = initSession(
-        'active',
-        winId,
-        function (me, li, tabs) {
-            // FIXME This is a debugging tool to work around the fact that
-            // closed windows aren't always handled properly and should be
-            // removed as soon as feasible.
-            var close = document.createElement('button');
-            close.appendChild(document.createTextNode('close'));
-            close.onclick = me.close;
-            li.appendChild(close);
-
-            li.appendChild(document.createTextNode(' '));
-            li.appendChild(document.createTextNode(name));
-        },
-        function () {
-            chrome.runtime.getBackgroundPage(function (bgPage) {
-                bgPage.deactivateSession(name, winId);
-            });
-
-            chrome.storage.sync.get(null, function (result) {
-                initSavedSession(name);
-                renderers.sync[name].render(result[name]);
-            });
-        }
-    );
 }
 
 function initUnsavedSession(winId) {
@@ -234,32 +258,41 @@ function initAndRenderUnsavedSession(winId) {
 // TODO close all active windows at end of browser session
 
 document.addEventListener('DOMContentLoaded', function() {
-    var bgPage;
-    chrome.runtime.getBackgroundPage(function (bgPage_) {
-        bgPage = bgPage_;
-    });
+    chrome.runtime.getBackgroundPage(function (bgPage) {
+        chrome.storage.sync.get(null, function(sessionTabs) {
+            for (var name in sessionTabs) {
+                var winId = bgPage.winIdForSession(name);
+                winId
+                    ? initActiveSession(name, winId)
+                    : initSavedSession(name);
+                renderers.sync[name].render(sessionTabs[name]);
+            }
+        });
 
-    chrome.storage.sync.get(null, function(sessionTabs) {
-        for (var name in sessionTabs) {
-            var winId = bgPage.winIdForSession(name);
-            winId
-                ? initActiveSession(name, winId)
-                : initSavedSession(name);
-            renderers.sync[name].render(sessionTabs[name]);
-        }
-    });
+        chrome.windows.getAll(
+            {'populate': true},
+            function(wins) {
+                wins.forEach(function (win) {
+                    if (bgPage.sessionNameWithWinId('' + win.id)) {
+                        return;
+                    }
+                    initAndRenderUnsavedSession(win.id);
+                });
+            }
+        );
 
-    chrome.windows.getAll(
-        {'populate': true},
-        function(wins) {
-            wins.forEach(function (win) {
-                if (bgPage.sessionNameWithWinId('' + win.id)) {
-                    return;
-                }
-                initAndRenderUnsavedSession(win.id);
-            });
-        }
-    );
+        bgPage.onWinClose = function (winId, sessionName) {
+            if (!renderers) {
+                return;
+            }
+
+            if (sessionName) {
+                renderers.sync[sessionName].close();
+            } else {
+                renderers.local['' + winId].close();
+            }
+        };
+    });
 
     chrome.storage.onChanged.addListener(function (changes, areaName) {
         var rs;
@@ -283,14 +316,5 @@ document.addEventListener('DOMContentLoaded', function() {
 
     chrome.windows.onCreated.addListener(function (win) {
         initAndRenderUnsavedSession(win.id);
-    });
-
-    chrome.windows.onRemoved.addListener(function (winId) {
-        var sessionName = bgPage.sessionNameWithWinId('' + winId);
-        if (sessionName) {
-            renderers.sync[name].close();
-        } else {
-            renderers.local[name].close();
-        }
     });
 });
